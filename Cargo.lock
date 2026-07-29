@@ -1293,6 +1293,7 @@ dependencies = [
  "device_query",
  "eframe",
  "enigo",
+ "objc",
 ]
 
 [[package]]

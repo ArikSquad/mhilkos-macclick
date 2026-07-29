@@ -158,6 +158,7 @@ struct MacClik {
     repeat_count: u64,
     hotkey: Vec<Keycode>,
     recording_hotkey: bool,
+    hotkey_pressed: bool,
     picking_position: bool,
     previous_keys: HashSet<Keycode>,
     running: Arc<AtomicBool>,
@@ -188,6 +189,7 @@ impl MacClik {
             repeat_count: 10,
             hotkey: vec![Keycode::F6],
             recording_hotkey: false,
+            hotkey_pressed: false,
             picking_position: false,
             previous_keys: HashSet::new(),
             running: Arc::new(AtomicBool::new(false)),
@@ -278,18 +280,14 @@ impl MacClik {
                 self.recording_hotkey = false;
                 self.status = "Hotkey unchanged".into();
             } else if newly_pressed.iter().any(|key| !is_modifier(*key)) {
-                let mut combo: Vec<_> = current.iter().copied().collect();
-                combo.sort_by_key(|key| format!("{key:?}"));
-                self.hotkey = combo;
+                self.hotkey = normalize_hotkey(current.iter().copied());
                 self.recording_hotkey = false;
                 self.status = "Hotkey updated".into();
             }
-        } else if !newly_pressed.is_empty()
-            && current == self.hotkey.iter().copied().collect()
-            && newly_pressed.iter().any(|key| !is_modifier(*key))
-        {
+        } else if hotkey_matches(&self.hotkey, &current) && !self.hotkey_pressed {
             self.toggle();
         }
+        self.hotkey_pressed = hotkey_matches(&self.hotkey, &current);
         self.previous_keys = current;
     }
 }
@@ -430,11 +428,96 @@ fn is_modifier(key: Keycode) -> bool {
     )
 }
 
+fn normalize_key(key: Keycode) -> Keycode {
+    match key {
+        Keycode::RShift => Keycode::LShift,
+        Keycode::RControl => Keycode::LControl,
+        Keycode::RAlt => Keycode::LAlt,
+        Keycode::RMeta => Keycode::LMeta,
+        _ => key,
+    }
+}
+
+fn key_order(key: Keycode) -> (u8, String) {
+    let rank = match normalize_key(key) {
+        Keycode::LMeta => 0,
+        Keycode::LControl => 1,
+        Keycode::LAlt => 2,
+        Keycode::LShift => 3,
+        _ => 4,
+    };
+    (rank, format!("{key:?}"))
+}
+
+fn normalize_hotkey(keys: impl IntoIterator<Item = Keycode>) -> Vec<Keycode> {
+    let mut keys = keys.into_iter().map(normalize_key).collect::<Vec<_>>();
+    keys.sort_by_key(|key| key_order(*key));
+    keys.dedup();
+    keys
+}
+
+fn hotkey_matches(hotkey: &[Keycode], pressed: &HashSet<Keycode>) -> bool {
+    normalize_hotkey(pressed.iter().copied()) == hotkey
+}
+
+fn key_name(key: Keycode) -> String {
+    match normalize_key(key) {
+        Keycode::LMeta => {
+            if cfg!(target_os = "macos") {
+                "CMD".into()
+            } else {
+                "META".into()
+            }
+        }
+        Keycode::LControl => "CTRL".into(),
+        Keycode::LAlt => {
+            if cfg!(target_os = "macos") {
+                "OPTION".into()
+            } else {
+                "ALT".into()
+            }
+        }
+        Keycode::LShift => "SHIFT".into(),
+        key => format!("{key:?}").to_uppercase(),
+    }
+}
+
 fn hotkey_name(keys: &[Keycode]) -> String {
     keys.iter()
-        .map(|key| format!("{key:?}"))
+        .map(|key| key_name(*key))
         .collect::<Vec<_>>()
         .join(" + ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalizes_and_orders_modifier_combinations() {
+        assert_eq!(
+            normalize_hotkey([Keycode::K, Keycode::RShift, Keycode::RMeta]),
+            vec![Keycode::LMeta, Keycode::LShift, Keycode::K]
+        );
+    }
+
+    #[test]
+    fn either_side_modifier_matches_the_same_hotkey() {
+        let hotkey = normalize_hotkey([Keycode::LControl, Keycode::P]);
+        assert!(hotkey_matches(
+            &hotkey,
+            &HashSet::from([Keycode::RControl, Keycode::P])
+        ));
+    }
+
+    #[test]
+    fn extra_pressed_keys_do_not_match() {
+        let hotkey = normalize_hotkey([Keycode::LControl, Keycode::P]);
+        assert!(!hotkey_matches(
+            &hotkey,
+            &HashSet::from([Keycode::LControl, Keycode::P, Keycode::LShift])
+        ));
+    }
 }
 
 fn spawn_input_monitor(tx: Sender<InputEvent>, ctx: egui::Context) {

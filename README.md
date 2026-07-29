@@ -5,7 +5,8 @@ macOS (Intel and Apple Silicon), and Windows.
 
 ## Features
 
-- Global, rebindable start/stop hotkey
+- Global, rebindable start/stop hotkey combinations (such as Command + K
+  on macOS or Ctrl + P on Linux and Windows)
 - Left, right, and middle clicks
 - Single or double click
 - Millisecond-to-hour intervals
