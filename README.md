@@ -42,16 +42,15 @@ sudo apt install libx11-dev libxi-dev libxtst-dev libxcb1-dev \
 
 ## Release
 
-Push a version tag to build and publish all platform archives:
+Open the repository's **Actions** tab, select the **Release** workflow, and
+choose **Run workflow**. Enter a release tag such as `v0.2.0` and optionally
+mark it as a prerelease. The workflow builds every platform archive, creates
+the tag from the selected branch or commit, and publishes the GitHub release
+with generated release notes.
 
-```sh
-git tag v0.2.0
-git push origin v0.2.0
-```
-
-The GitHub Actions workflow creates native Intel and Apple Silicon macOS app
-bundles, plus Linux and Windows binaries. Builds are currently unsigned, so
-macOS may require right-clicking the app and choosing **Open** on first launch.
+The release includes native Intel and Apple Silicon macOS app bundles, plus
+Linux and Windows binaries. Builds are currently unsigned, so macOS may
+require right-clicking the app and choosing **Open** on first launch.
 
 ## License
 
