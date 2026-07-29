@@ -1,0 +1,17 @@
+[package]
+name = "macclik"
+version = "0.2.0"
+edition = "2021"
+description = "A small, cross-platform autoclicker"
+license = "MIT"
+repository = "https://github.com/Mhilkos/MacClik"
+
+[dependencies]
+device_query = "4.0"
+eframe = { version = "0.31", default-features = false, features = ["glow", "wayland", "x11"] }
+enigo = { version = "0.3", default-features = false, features = ["x11rb"] }
+
+[profile.release]
+lto = "thin"
+strip = true
+codegen-units = 1
