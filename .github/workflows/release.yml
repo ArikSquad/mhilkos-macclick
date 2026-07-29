@@ -1,10 +1,17 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (for example, v0.2.0)"
+        required: true
+        type: string
+      prerelease:
+        description: "Mark this release as a prerelease"
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -64,7 +71,6 @@ jobs:
           path: ${{ matrix.archive }}
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: ubuntu-24.04
     steps:
@@ -74,5 +80,8 @@ jobs:
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.tag }}
+          target_commitish: ${{ github.sha }}
           generate_release_notes: true
+          prerelease: ${{ inputs.prerelease }}
           files: dist/*
