@@ -1,4 +1,4 @@
-# MacClick, an AutoClicker for macOS (Intel)
+# MacClik, an AutoClicker for macOS (Intel)
 
 A small autoclicker with a GUI:
 - Interval control (hours / minutes / seconds / milliseconds)
