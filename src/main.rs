@@ -15,6 +15,77 @@ use device_query::{DeviceQuery, DeviceState, Keycode};
 use eframe::egui;
 use enigo::{Button, Coordinate, Direction, Enigo, Mouse, Settings};
 
+/// macOS suspends timers and throttles background threads for apps it
+/// considers idle (a feature called "App Nap"), which happens once our
+/// window is no longer visible/frontmost for a little while. Holding an
+/// `ActivityToken` tells the OS this process is doing user-initiated work
+/// that shouldn't be paused, for as long as the token is alive. App Nap is
+/// decided per-process, so a single token held anywhere (e.g. the clicker
+/// thread) keeps the whole app, including the hotkey-listening thread,
+/// awake. On other platforms this is a no-op.
+#[cfg(target_os = "macos")]
+mod app_nap {
+    use objc::{class, msg_send, runtime::Object, sel, sel_impl};
+    use std::ffi::CString;
+
+    // NSActivityUserInitiated from NSProcessInfo.h. Also opts out of idle
+    // system sleep, which is fine here: if the whole Mac sleeps, clicking
+    // has to stop anyway.
+    const NS_ACTIVITY_USER_INITIATED: u64 = 0x00FF_FFFF;
+
+    pub struct ActivityToken(*mut Object);
+
+    // The token is just an opaque object handle from AppKit; nothing here
+    // touches it except on drop, so it's fine to send across threads.
+    unsafe impl Send for ActivityToken {}
+
+    impl ActivityToken {
+        pub fn begin(reason: &str) -> Self {
+            unsafe {
+                let process_info: *mut Object = msg_send![class!(NSProcessInfo), processInfo];
+                let c_reason = CString::new(reason).expect("reason must not contain a null byte");
+                let ns_reason: *mut Object = msg_send![class!(NSString), alloc];
+                let ns_reason: *mut Object =
+                    msg_send![ns_reason, initWithUTF8String: c_reason.as_ptr()];
+                let token: *mut Object = msg_send![
+                    process_info,
+                    beginActivityWithOptions: NS_ACTIVITY_USER_INITIATED
+                    reason: ns_reason
+                ];
+                // The token comes back autoreleased, and this thread has no
+                // autorelease pool to eventually drain it, so take our own
+                // explicit reference instead of relying on that. We also
+                // own `ns_reason` from `alloc`, and beginActivity... doesn't
+                // take ownership of it, so release it once we're done.
+                let _: *mut Object = msg_send![token, retain];
+                let _: () = msg_send![ns_reason, release];
+                Self(token)
+            }
+        }
+    }
+
+    impl Drop for ActivityToken {
+        fn drop(&mut self) {
+            unsafe {
+                let process_info: *mut Object = msg_send![class!(NSProcessInfo), processInfo];
+                let _: () = msg_send![process_info, endActivity: self.0];
+                let _: () = msg_send![self.0, release];
+            }
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+mod app_nap {
+    pub struct ActivityToken;
+
+    impl ActivityToken {
+        pub fn begin(_reason: &str) -> Self {
+            Self
+        }
+    }
+}
+
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -397,6 +468,11 @@ fn spawn_input_monitor(tx: Sender<InputEvent>, ctx: egui::Context) {
 
 fn spawn_clicker(config: ClickConfig, running: Arc<AtomicBool>, tx: Sender<WorkerEvent>) {
     thread::spawn(move || {
+        // Held for as long as this thread runs; dropped automatically on
+        // every exit path (finished, error, or stopped), which ends the
+        // activity and lets macOS resume napping the app when idle.
+        let _stay_awake = app_nap::ActivityToken::begin("MacClik is auto-clicking");
+
         let mut enigo = match Enigo::new(&Settings::default()) {
             Ok(enigo) => enigo,
             Err(error) => {
